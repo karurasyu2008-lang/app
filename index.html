@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>デッキ共有＆バージョン管理付き勝率アプリ（モバイル版）</title>
+  <style>
+    body { font-family: sans-serif; background:#f6f8fa; margin:0; padding:15px; line-height:1.6; }
+    h1 { text-align:center; margin-bottom:12px; font-size:1.4rem; }
+    .row { display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
+    input, button, select { padding:10px 12px; border-radius:6px; border:1px solid #ccc; font-size:1rem; }
+    button { cursor:pointer; }
+    button.primary { background-color:#28a745; color:#fff; border:none; }
+    button.danger { background-color:#dc3545; color:#fff; border:none; }
+    button.secondary { background-color:#6c757d; color:#fff; border:none; }
+    button.settings { background-color:#007bff; color:#fff; border:none; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.9rem; }
+    th, td { border:1px solid #ddd; padding:6px 8px; text-align:center; }
+    th { background:#eee; }
+    .deck-nav { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+    .deck-tab { padding:6px 10px; border:1px solid #007bff; border-radius:4px; background:#fff; color:#007bff; cursor:pointer; font-size:0.9rem; }
+    .deck-tab.active { background:#007bff; color:#fff; }
+    #controlPanel { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+    #detailsButtons { display:none; flex-direction:column; gap:6px; }
+    #logList { max-height:200px; overflow-y:auto; border:1px solid #ccc; padding:5px; background:#fff; font-size:0.9rem; }
+    #logList li { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+    #logList button { margin-left:8px; padding:4px 8px; font-size:0.8rem; }
+    #adminPanel { display:none; margin-top:15px; padding:12px; border:1px solid #ccc; border-radius:6px; background:#fff; }
+    #adminPanel h2 { margin-top:0; font-size:1.1rem; }
+    #adminPanel ul { list-style:none; padding:0; display:flex; flex-wrap:wrap; gap:6px; }
+    #adminPanel li { display:flex; align-items:center; gap:4px; border:1px solid #ccc; padding:4px 6px; border-radius:4px; }
+    #adminPanel li button { margin-left:4px; padding:2px 6px; font-size:0.8rem; }
+    #historyModal { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); justify-content:center; align-items:center; }
+    #historyContent { background:#fff; padding:20px; border-radius:6px; max-height:80vh; overflow-y:auto; width:90%; max-width:600px; }
+    #historyContent h3 { margin-top:0; }
+    #historyContent table { width:100%; margin-bottom:20px; }
+    #historyContent .close { float:right; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <h1>デッキ勝率アプリ（モバイル）</h1>
+  <!-- Match entry -->
+  <div class="row">
+    <label>自分のデッキ名:
+      <input id="myDeck" list="deckList" placeholder="例: ドラゴンデッキ" />
+    </label>
+    <label>相手のデッキ名:
+      <input id="oppDeck" list="deckList" placeholder="例: 魔法使いデッキ" />
+    </label>
+    <datalist id="deckList"></datalist>
+  </div>
+  <div class="row">
+    <button class="primary" id="btnWin">勝ちを追加</button>
+    <button class="danger" id="btnLoss">負けを追加</button>
+    <button class="secondary" id="adminToggle">デッキ登録</button>
+  </div>
+  <!-- Search and control panel -->
+  <div id="controlPanel">
+    <div class="row" style="margin-bottom:6px;">
+      <label>デッキ検索:
+        <input id="searchDeck" list="deckList" placeholder="デッキ名を検索" />
+      </label>
+      <button id="resetSearch">リセット</button>
+    </div>
+    <div id="searchSummary" style="font-weight:bold;"></div>
+    <!-- Details section -->
+    <button class="settings" id="detailsToggle">詳細設定</button>
+    <div id="detailsButtons">
+      <button id="logToggle">ログ</button>
+      <button id="versionButton">バージョン開始</button>
+      <button id="historyButton">履歴</button>
+    </div>
+    <div id="logListContainer" style="display:none;">
+      <strong>結果報告ログ</strong>
+      <ul id="logList"></ul>
+    </div>
+  </div>
+  <!-- Deck navigation -->
+  <div id="deckNav" class="deck-nav"></div>
+  <!-- Summary table -->
+  <table>
+    <thead>
+      <tr>
+        <th>自分のデッキ</th>
+        <th>相手のデッキ</th>
+        <th>勝ち数</th>
+        <th>負け数</th>
+        <th>勝率 (%)</th>
+      </tr>
+    </thead>
+    <tbody id="summaryBody"></tbody>
+  </table>
+  <!-- Admin panel -->
+  <div id="adminPanel">
+    <h2>デッキ登録</h2>
+    <ul id="deckAdminList"></ul>
+    <div class="row">
+      <input type="text" id="newDeck" placeholder="新しいデッキ名" />
+      <button id="addDeck">追加</button>
+    </div>
+  </div>
+  <!-- History modal -->
+  <div id="historyModal">
+    <div id="historyContent">
+      <span class="close" id="historyClose">[閉じる]</span>
+      <h3>バージョン履歴</h3>
+      <input id="historySearch" type="text" placeholder="バージョン名で検索" style="margin-bottom:10px; width:100%;" />
+      <div id="historyList"></div>
+    </div>
+  </div>
+  <script>
+    // Data arrays and state
+    let matches = [];
+    let versions = [];
+    let currentVersionName = null;
+    let decks = [];
+    let currentFilter = '';
+    // Elements
+    const myDeckInput = document.getElementById('myDeck');
+    const oppDeckInput = document.getElementById('oppDeck');
+    const deckListEl = document.getElementById('deckList');
+    const summaryBody = document.getElementById('summaryBody');
+    const deckNav = document.getElementById('deckNav');
+    const searchInput = document.getElementById('searchDeck');
+    const resetSearchBtn = document.getElementById('resetSearch');
+    const searchSummaryEl = document.getElementById('searchSummary');
+    const adminPanel = document.getElementById('adminPanel');
+    const adminToggleBtn = document.getElementById('adminToggle');
+    const deckAdminList = document.getElementById('deckAdminList');
+    const newDeckInput = document.getElementById('newDeck');
+    const logList = document.getElementById('logList');
+    const logListContainer = document.getElementById('logListContainer');
+    const logToggleBtn = document.getElementById('logToggle');
+    const versionButton = document.getElementById('versionButton');
+    const historyButton = document.getElementById('historyButton');
+    const historyModal = document.getElementById('historyModal');
+    const historyListDiv = document.getElementById('historyList');
+    const historyClose = document.getElementById('historyClose');
+    const historySearchInput = document.getElementById('historySearch');
+    const detailsToggleBtn = document.getElementById('detailsToggle');
+    const detailsButtonsDiv = document.getElementById('detailsButtons');
+    // Load data
+    function loadData() {
+      try {
+        const savedMatches = localStorage.getItem('currentMatches');
+        if (savedMatches) matches = JSON.parse(savedMatches);
+        const savedVersions = localStorage.getItem('versions');
+        if (savedVersions) versions = JSON.parse(savedVersions);
+        currentVersionName = localStorage.getItem('currentVersionName');
+        const savedDecks = localStorage.getItem('decks');
+        if (savedDecks) decks = JSON.parse(savedDecks);
+        if (!decks.length) {
+          const allDecks = matches.map(m => m.myDeck).concat(matches.map(m => m.oppDeck));
+          decks = Array.from(new Set(allDecks));
+        }
+      } catch (e) { console.error(e); }
+    }
+    function saveMatches() { localStorage.setItem('currentMatches', JSON.stringify(matches)); }
+    function saveVersions() { localStorage.setItem('versions', JSON.stringify(versions)); }
+    function saveDecks() { localStorage.setItem('decks', JSON.stringify(decks)); }
+    function saveCurrentVersion() {
+      if (currentVersionName) localStorage.setItem('currentVersionName', currentVersionName);
+      else localStorage.removeItem('currentVersionName');
+    }
+    // Datalist update
+    function updateDatalists() {
+      deckListEl.innerHTML = '';
+      decks.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        deckListEl.appendChild(opt);
+      });
+    }
+    // Add match
+    function addMatch(result) {
+      const myDeck = myDeckInput.value.trim();
+      const oppDeck = oppDeckInput.value.trim();
+      if (!myDeck || !oppDeck) { alert('デッキ名を入力してください。'); return; }
+      if (!decks.some(d => d.toLowerCase() === myDeck.toLowerCase())) { alert('デッキは登録されたデッキから選んでください。'); return; }
+      if (!decks.some(d => d.toLowerCase() === oppDeck.toLowerCase())) { alert('デッキは登録されたデッキから選んでください。'); return; }
+      matches.push({ myDeck, oppDeck, result, ts: Date.now() });
+      myDeckInput.value = '';
+      oppDeckInput.value = '';
+      saveMatches();
+      updateLogList();
+      updateSummary(currentFilter);
+    }
+    // Summary update
+    function updateSummary(filter = '') {
+      const summary = {};
+      matches.forEach(({ myDeck, oppDeck, result }) => {
+        if (filter && myDeck.toLowerCase() !== filter.toLowerCase()) return;
+        const key = `${myDeck}|${oppDeck}`;
+        if (!summary[key]) summary[key] = { myDeck, oppDeck, win:0, loss:0 };
+        if (result === 'win') summary[key].win++;
+        else summary[key].loss++;
+      });
+      summaryBody.innerHTML = '';
+      const rows = Object.values(summary);
+      rows.sort((a,b) => a.myDeck.localeCompare(b.myDeck, 'ja'));
+      rows.forEach(({ myDeck, oppDeck, win, loss }) => {
+        const games = win + loss;
+        const rate = games ? (win/games)*100 : 0;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${myDeck}</td><td>${oppDeck}</td><td>${win}</td><td>${loss}</td><td>${rate.toFixed(2)}</td>`;
+        summaryBody.appendChild(tr);
+      });
+      if (filter) {
+        let wins=0, losses=0;
+        matches.forEach(m => { if (m.myDeck.toLowerCase() === filter.toLowerCase()) { if (m.result==='win') wins++; else losses++; } });
+        const tot = wins + losses;
+        const rate = tot ? (wins/tot)*100 : 0;
+        searchSummaryEl.textContent = `${filter} の通算: 勝ち数 ${wins}, 負け数 ${losses}, 勝率 ${rate.toFixed(2)}%`;
+      } else { searchSummaryEl.textContent = ''; }
+    }
+    // Deck nav
+    function updateDeckNav(selected = '') {
+      deckNav.innerHTML = '';
+      const allTab = document.createElement('span');
+      allTab.textContent = '全デッキ';
+      allTab.className = 'deck-tab' + (selected === '' ? ' active' : '');
+      allTab.addEventListener('click', () => { currentFilter=''; searchInput.value=''; updateDeckNav(''); updateSummary(''); });
+      deckNav.appendChild(allTab);
+      decks.forEach(d => {
+        const tab = document.createElement('span');
+        tab.textContent = d;
+        tab.className = 'deck-tab' + (selected && selected.toLowerCase() === d.toLowerCase() ? ' active' : '');
+        tab.addEventListener('click', () => { currentFilter=d; searchInput.value=d; updateDeckNav(d); updateSummary(d); });
+        deckNav.appendChild(tab);
+      });
+    }
+    // Log list
+    function updateLogList() {
+      logList.innerHTML = '';
+      matches.slice().reverse().forEach((m, idx) => {
+        const li = document.createElement('li');
+        const text = `${m.myDeck} vs ${m.oppDeck} - ${m.result === 'win' ? '勝ち' : '負け'}`;
+        const span = document.createElement('span'); span.textContent = text;
+        const delBtn = document.createElement('button'); delBtn.textContent = '削除';
+        delBtn.addEventListener('click', () => {
+          const indexToRemove = matches.length - 1 - idx;
+          matches.splice(indexToRemove, 1);
+          saveMatches();
+          updateLogList();
+          updateSummary(currentFilter);
+        });
+        li.appendChild(span);
+        li.appendChild(delBtn);
+        logList.appendChild(li);
+      });
+    }
+    // Admin functions
+    function renderDeckAdminList() {
+      deckAdminList.innerHTML = '';
+      decks.forEach(d => {
+        const li = document.createElement('li');
+        const span = document.createElement('span'); span.textContent = d;
+        const editBtn = document.createElement('button'); editBtn.textContent = '編集';
+        editBtn.addEventListener('click', () => {
+          const newName = prompt('新しい名前', d);
+          if (newName && newName.trim()) renameDeck(d, newName.trim());
+        });
+        const delBtn = document.createElement('button'); delBtn.textContent = '削除';
+        delBtn.addEventListener('click', () => {
+          if (confirm(`${d} を削除しますか？このデッキの戦績も削除されます。`)) deleteDeck(d);
+        });
+        li.appendChild(span);
+        li.appendChild(editBtn);
+        li.appendChild(delBtn);
+        deckAdminList.appendChild(li);
+      });
+    }
+    function addDeck() {
+      const name = newDeckInput.value.trim(); if (!name) return;
+      if (decks.some(d => d.toLowerCase() === name.toLowerCase())) return;
+      decks.push(name);
+      saveDecks();
+      updateDatalists();
+      updateDeckNav(currentFilter);
+      renderDeckAdminList();
+      newDeckInput.value = '';
+    }
+    function renameDeck(oldName, newName) {
+      decks = decks.map(d => d === oldName ? newName : d);
+      matches.forEach(m => {
+        if (m.myDeck === oldName) m.myDeck = newName;
+        if (m.oppDeck === oldName) m.oppDeck = newName;
+      });
+      saveDecks(); saveMatches();
+      if (currentFilter && currentFilter.toLowerCase() === oldName.toLowerCase()) {
+        currentFilter = newName;
+        searchInput.value = newName;
+      }
+      updateDatalists();
+      updateDeckNav(currentFilter);
+      updateSummary(currentFilter);
+      updateLogList();
+      renderDeckAdminList();
+    }
+    function deleteDeck(name) {
+      decks = decks.filter(d => d !== name);
+      matches = matches.filter(m => m.myDeck !== name && m.oppDeck !== name);
+      saveDecks(); saveMatches();
+      if (currentFilter && currentFilter.toLowerCase() === name.toLowerCase()) {
+        currentFilter = '';
+        searchInput.value = '';
+      }
+      updateDatalists();
+      updateDeckNav(currentFilter);
+      updateSummary(currentFilter);
+      updateLogList();
+      renderDeckAdminList();
+    }
+    // Version functions
+    function startVersion() {
+      const name = prompt('バージョン名を入力してください');
+      if (!name) return;
+      currentVersionName = name;
+      saveCurrentVersion();
+      versionButton.textContent = `${name} 終了`;
+    }
+    function endVersion() {
+      if (!currentVersionName) return;
+      versions.push({ name: currentVersionName, matches: matches.slice(), endedAt: Date.now() });
+      saveVersions();
+      currentVersionName = null;
+      saveCurrentVersion();
+      matches = [];
+      saveMatches();
+      updateLogList();
+      updateSummary(currentFilter);
+      versionButton.textContent = 'バージョン開始';
+    }
+    function toggleVersion() {
+      if (!currentVersionName) startVersion();
+      else endVersion();
+    }
+    function updateVersionButton() {
+      if (currentVersionName) versionButton.textContent = `${currentVersionName} 終了`;
+      else versionButton.textContent = 'バージョン開始';
+    }
+    // History functions
+    function renderHistoryList(filter = '') {
+      historyListDiv.innerHTML = '';
+      const list = versions.slice().reverse();
+      const filtered = filter ? list.filter(v => v.name.toLowerCase().includes(filter.toLowerCase())) : list;
+      if (!filtered.length) {
+        historyListDiv.textContent = '履歴はありません。'; return; }
+      filtered.forEach(v => {
+        const container = document.createElement('div');
+        container.style.marginBottom = '20px';
+        const title = document.createElement('h4');
+        const date = new Date(v.endedAt);
+        const dateStr = date.toLocaleString('ja-JP');
+        title.textContent = `${v.name} (終了: ${dateStr})`;
+        container.appendChild(title);
+        const summary = {};
+        v.matches.forEach(m => {
+          const key = `${m.myDeck}|${m.oppDeck}`;
+          if (!summary[key]) summary[key] = { myDeck:m.myDeck, oppDeck:m.oppDeck, win:0, loss:0 };
+          if (m.result === 'win') summary[key].win++;
+          else summary[key].loss++;
+        });
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr><th>自分のデッキ</th><th>相手のデッキ</th><th>勝ち数</th><th>負け数</th><th>勝率 (%)</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        Object.values(summary).forEach(r => {
+          const games = r.win + r.loss;
+          const rate = games ? (r.win/games)*100 : 0;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.myDeck}</td><td>${r.oppDeck}</td><td>${r.win}</td><td>${r.loss}</td><td>${rate.toFixed(2)}</td>`;
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+        historyListDiv.appendChild(container);
+      });
+    }
+    function openHistory() {
+      if (historySearchInput) historySearchInput.value = '';
+      renderHistoryList('');
+      historyModal.style.display = 'flex';
+    }
+    // Event listeners
+    document.getElementById('btnWin').addEventListener('click', () => addMatch('win'));
+    document.getElementById('btnLoss').addEventListener('click', () => addMatch('loss'));
+    searchInput.addEventListener('input', () => {
+      const val = searchInput.value.trim(); currentFilter = val; updateDeckNav(val); updateSummary(val);
+    });
+    resetSearchBtn.addEventListener('click', () => {
+      searchInput.value = ''; currentFilter = ''; updateDeckNav(''); updateSummary('');
+    });
+    adminToggleBtn.addEventListener('click', () => {
+      const visible = adminPanel.style.display === 'block';
+      adminPanel.style.display = visible ? 'none' : 'block';
+      adminToggleBtn.textContent = visible ? 'デッキ登録' : 'デッキ登録終了';
+      if (!visible) renderDeckAdminList();
+    });
+    document.getElementById('addDeck').addEventListener('click', addDeck);
+    versionButton.addEventListener('click', toggleVersion);
+    historyButton.addEventListener('click', openHistory);
+    historyClose.addEventListener('click', () => { historyModal.style.display = 'none'; });
+    if (historySearchInput) historySearchInput.addEventListener('input', () => {
+      const q = historySearchInput.value.trim(); renderHistoryList(q);
+    });
+    if (logToggleBtn) logToggleBtn.addEventListener('click', () => {
+      const isVisible = logListContainer.style.display !== 'none';
+      logListContainer.style.display = isVisible ? 'none' : 'block';
+    });
+    detailsToggleBtn.addEventListener('click', () => {
+      const visible = detailsButtonsDiv.style.display === 'flex' || detailsButtonsDiv.style.display === 'block';
+      if (visible) detailsButtonsDiv.style.display = 'none';
+      else detailsButtonsDiv.style.display = 'flex';
+    });
+    // Initialize
+    loadData();
+    updateDatalists();
+    updateDeckNav(currentFilter);
+    updateSummary(currentFilter);
+    updateLogList();
+    updateVersionButton();
+  </script>
+</body>
+</html>
